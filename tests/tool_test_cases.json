@@ -1,0 +1,74 @@
+[
+  {
+    "id": "TS_1",
+    "intent": "TRACKING_STATUS",
+    "question": "Где сейчас мой заказ 1001?",
+    "expected_answer": "Заказ 1001: статус Shipped (в пути). Последнее событие: In Transit (Newark, NJ, 2025-08-03 07:30). Трек-номер TRK1001, перевозчик UPS. Ожидаемая доставка: 2025-08-05."
+  },
+  {
+    "id": "TS_2",
+    "intent": "TRACKING_STATUS",
+    "question": "Статус заказа #1004?",
+    "expected_answer": "Заказ 1004: статус Shipped. Последнее событие трекинга: Shipment on Hold (Toronto, ON, 2025-08-03 10:00) — задержка на таможне/оформлении. Трек-номер TRK1004, перевозчик DHL. ETA: 2025-08-08."
+  },
+  {
+    "id": "TS_3",
+    "intent": "TRACKING_STATUS",
+    "question": "Доставлен ли заказ 1003?",
+    "expected_answer": "Заказ 1003: статус Delivered (2025-07-20 18:45, Madrid, ES). Трек-номер TRK1003, перевозчик DHL."
+  },
+  {
+    "id": "DO_1",
+    "intent": "DELIVERY_OPTIONS",
+    "question": "Какие есть варианты доставки по США?",
+    "expected_answer": "Варианты по США: Standard (UPS, 3–5 дн., $5.00) и Express (UPS, 1–2 дн., $15.00)."
+  },
+  {
+    "id": "DO_2",
+    "intent": "DELIVERY_OPTIONS",
+    "question": "Сколько стоит международная доставка в Испанию?",
+    "expected_answer": "Международная доставка: International (DHL, 7–12 дн., $25.00)."
+  },
+  {
+    "id": "DO_3",
+    "intent": "DELIVERY_OPTIONS",
+    "question": "Сроки и перевозчик для международной доставки?",
+    "expected_answer": "International: DHL, ориентировочно 7–12 дней."
+  },
+  {
+    "id": "PR_1",
+    "intent": "PAYMENT_RETRY",
+    "question": "Оплата по заказу 1002 не прошла. Что делать?",
+    "expected_answer": "По заказу 1002 последняя попытка оплаты: Failed (2025-08-01 14:00), причина: card_declined — Issuer declined the transaction. Предлагаю повторить оплату другой картой/методом или проверить лимиты и реквизиты."
+  },
+  {
+    "id": "PR_2",
+    "intent": "PAYMENT_RETRY",
+    "question": "Могу ли я повторить оплату заказа 1002?",
+    "expected_answer": "Да, возможен повторный платеж. Текущий статус оплаты — Failed; попробуйте другой способ оплаты или снова картой после проверки у банка."
+  },
+  {
+    "id": "PR_3",
+    "intent": "PAYMENT_RETRY",
+    "question": "Почему списание не прошло по заказу #1002?",
+    "expected_answer": "Причина отклонения: card_declined (Issuer declined the transaction). Рекомендуем связаться с банком или использовать альтернативный метод."
+  },
+  {
+    "id": "RI_1",
+    "intent": "RETURN_ISSUE",
+    "question": "Хочу вернуть товар из заказа 1003",
+    "expected_answer": "По заказу 1003 уже есть запрос на возврат: статус Pending (от 2025-08-05), позиция: Running Shoes. Ожидает обработки."
+  },
+  {
+    "id": "RI_2",
+    "intent": "RETURN_ISSUE",
+    "question": "Каков статус моего возврата по заказу 1003?",
+    "expected_answer": "Запрос на возврат по 1003: статус Pending (ожидает одобрения). Как только вернём — получите подтверждение и информацию по возврату средств."
+  },
+  {
+    "id": "RI_3",
+    "intent": "RETURN_ISSUE",
+    "question": "Можно ли сделать обмен по заказу 1003?",
+    "expected_answer": "По 1003 оформлен возврат (Pending). После одобрения возможен обмен/повторный заказ — уточним детали модели/размера."
+  }
+]
