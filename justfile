@@ -28,4 +28,3 @@ app:
     sleep 5
     echo "🎨 Starting Streamlit app..."
     uv run streamlit run streamlit_app.py
-
