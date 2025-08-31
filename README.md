@@ -24,7 +24,7 @@ The system uses a graph-based workflow with 4 main branches:
 4. **Cannot Help** - Politely declines out-of-scope requests
 
 
-<img width="703" height="286" alt="Screenshot 2025-09-01 at 00 27 54" src="https://github.com/user-attachments/assets/69faa2aa-badd-43fb-a6ee-112866ab6e03" />
+<img width="703" height="306" alt="Screenshot 2025-09-01 at 00 27 54" src="https://github.com/user-attachments/assets/69faa2aa-badd-43fb-a6ee-112866ab6e03" />
 
 ## Prerequisites
 
@@ -201,5 +201,6 @@ just app           # Start Streamlit interface
 6. Implement audit logging for support interactions
 
 7. Add multi-language support for international customers
+
 
 
