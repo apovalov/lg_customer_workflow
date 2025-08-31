@@ -4,7 +4,8 @@
 
 AI-powered customer support assistant built with LangChain and LangGraph. Combines RAG (Retrieval Augmented Generation) for general knowledge queries with database tools for specific customer data operations.
 
-**Originally based on the assignment in "AI Engineer Test Assignment.pdf"**
+<img width="1093" height="516" alt="Screenshot 2025-09-01 at 00 27 54" src="https://github.com/user-attachments/assets/69faa2aa-badd-43fb-a6ee-112866ab6e03" />
+
 
 ## Features
 
@@ -197,4 +198,5 @@ just app           # Start Streamlit interface
 4. Expand knowledge base with more detailed support documentation
 5. Add user authentication and session management
 6. Implement audit logging for support interactions
+
 7. Add multi-language support for international customers
