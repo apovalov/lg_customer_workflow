@@ -69,11 +69,9 @@ _routing_decision = "general"
 # --- Helper Functions ---
 def get_last_human_message(state: SupportState) -> str:
     """Extract the last human message content from state, handling both string and list formats"""
-    print(f"DEBUG: Total messages in state: {len(state['messages'])}")
     for i, msg in enumerate(reversed(state["messages"])):
         msg_type = getattr(msg, 'type', 'unknown')
         msg_class = msg.__class__.__name__
-        print(f"DEBUG: Message {len(state['messages'])-i-1}: type='{msg_type}', class='{msg_class}'")
 
         # Try different ways to identify human messages
         if (hasattr(msg, 'type') and msg.type == 'human') or msg_class == 'HumanMessage':
@@ -82,9 +80,7 @@ def get_last_human_message(state: SupportState) -> str:
                 result = " ".join(str(item) for item in content if isinstance(item, str))
             else:
                 result = str(content)
-            print(f"DEBUG: Found human message: '{result}'")
             return result
-    print("DEBUG: No human messages found")
     return ""
 
 
@@ -104,22 +100,17 @@ class IntentClassification(BaseModel):
 def unified_intent_classifier(state: SupportState) -> dict:
     """Single-step classification replacing the 3-node cascade"""
     global _routing_decision
-    print("unified_intent_classifier node called")
 
     # Check if messages exist
     if not state["messages"]:
-        print("No messages in state, defaulting to general")
         _routing_decision = "general"
         return {}
 
     # Get the last human message
     user_msg = get_last_human_message(state)
     if not user_msg:
-        print("No human messages found, defaulting to general")
         _routing_decision = "general"
         return {}
-
-    print(f"Classifying message: {user_msg}")
 
     prompt = ChatPromptTemplate.from_messages([
         ("system", UNIFIED_INTENT_CLASSIFIER_PROMPT),
@@ -128,15 +119,12 @@ def unified_intent_classifier(state: SupportState) -> dict:
     llm_input = prompt.format_messages(question=user_msg)
     response = llm.invoke(llm_input)
     answer = response.content.strip().lower()
-    print(f"Intent classification: {answer}")
 
     try:
         parsed = IntentClassification(next=answer)
         _routing_decision = parsed.next
-        print(f"Classification result: {_routing_decision}")
         return {}
     except ValidationError as e:
-        print(f"Validation error in classification: {e}")
         # Default to general for invalid responses
         _routing_decision = "general"
         return {}
@@ -144,13 +132,9 @@ def unified_intent_classifier(state: SupportState) -> dict:
 
 def rag_agent(state: SupportState):
     """Deterministic knowledge base retrieval - no tools, direct search"""
-    print("rag_agent node called")
-
     user_msg = get_last_human_message(state)
     if not user_msg:
         return {"messages": [AIMessage(content="Не могу обработать запрос без сообщения.")]}
-
-    print(f"Searching knowledge base for: {user_msg}")
 
     try:
         # Direct knowledge base search (deterministic)
@@ -158,7 +142,6 @@ def rag_agent(state: SupportState):
         from config import settings
 
         retrieved_docs = vector_db_client.similarity_search(user_msg, k=settings.top_k)
-        print(f"Retrieved {len(retrieved_docs)} documents from vector store")
 
         # Build context from retrieved chunks
         context = "\n".join([doc.page_content for doc in retrieved_docs])
@@ -175,25 +158,20 @@ def rag_agent(state: SupportState):
         return {"messages": [response]}
 
     except Exception as e:
-        print(f"Error in RAG agent: {e}")
         return {"messages": [AIMessage(content="Извините, не могу получить информацию из базы знаний. Попробуйте переформулировать вопрос.")]}
 
 
 def react_tool_agent(state: SupportState):
     """Intelligent database tool usage with self-managed parameter extraction"""
-    print("react_tool_agent node called")
-
     # Check if we just came back from tools (last message has tool results)
     if (state["messages"] and
         hasattr(state["messages"][-1], '__class__') and
         state["messages"][-1].__class__.__name__ == 'ToolMessage'):
         # We have tool results, let LLM format a nice response
-        print("Processing tool results")
         response = llm.invoke(state["messages"])
         return {"messages": [response]}
     else:
         # First time here, bind all database tools and let React agent decide
-        print("Initial tool agent call")
         tool_llm = llm.bind_tools(database_tools)
 
         # Add system message for React agent behavior
@@ -206,21 +184,15 @@ def react_tool_agent(state: SupportState):
 
 def general_response(state: SupportState):
     """Handle casual conversation and capability questions"""
-    print("general_response node called")
-
     if not state["messages"]:
-        print("No messages in state, providing default greeting")
         return {"messages": [AIMessage(content="Привет! Чем могу помочь?")]}
 
     # Get the last human message
     user_msg_raw = get_last_human_message(state)
     if not user_msg_raw:
-        print("No human messages found, providing default greeting")
         return {"messages": [AIMessage(content="Привет! Чем могу помочь?")]}
 
     user_msg = user_msg_raw.lower()
-
-    print(f"Processing general query: {user_msg}")
 
     # Detect specific types of general requests
     if any(word in user_msg for word in ["привет", "здравствуй", "добрый", "hello", "hi"]):
@@ -247,7 +219,6 @@ def general_response(state: SupportState):
 
 def cannot_help(state: SupportState):
     """Polite refusal with capability explanation"""
-    print("cannot_help node called")
 
     # Static response explaining system limitations
     response_content = "Извините, я могу помочь только с вопросами поддержки клиентов: отслеживание заказов, варианты доставки, вопросы по оплате, возвраты и общие вопросы о сервисе. Есть ли что-то из этого, с чем я могу помочь?"
@@ -259,7 +230,6 @@ def cannot_help(state: SupportState):
 def routing_condition(state: SupportState):
     """Route based on classification decision"""
     global _routing_decision
-    print(f"Routing to: {_routing_decision}")
     return _routing_decision
 
 def tools_or_end_condition(state: SupportState):
