@@ -189,8 +189,6 @@ just app           # Start Streamlit interface
 3. **Content**: Enter your test query
 4. **Submit**: Click Submit button
 
-**⚠️ Important**: Don't use the "Next" field - it's for internal routing only.
-
 ## Possible Improvements
 
 1. Add real-time streaming in Streamlit interface
@@ -201,6 +199,7 @@ just app           # Start Streamlit interface
 6. Implement audit logging for support interactions
 
 7. Add multi-language support for international customers
+
 
 
 
