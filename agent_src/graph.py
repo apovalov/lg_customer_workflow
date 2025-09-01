@@ -3,14 +3,14 @@ from langchain_core.messages import AIMessage, SystemMessage
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END, START, MessagesState, StateGraph
-from langgraph.prebuilt import ToolNode
+from langgraph.prebuilt import ToolNode, create_react_agent
 from pydantic import BaseModel, ValidationError, field_validator
 
 from agent_src.prompts import (
     UNIFIED_INTENT_CLASSIFIER_PROMPT,
     REACT_TOOL_AGENT_PROMPT,
     RAG_AGENT_PROMPT,
-    GENERAL_RESPONSE_PROMPT
+    GENERAL_RESPONSE_PROMPT,
 )
 from agent_src.tools import (
     retrieve_support_docs,
@@ -60,7 +60,9 @@ all_tools = database_tools + rag_tools
 # --- State Definition ---
 class SupportState(MessagesState):
     """State for customer support workflow - contains messages only"""
+
     pass
+
 
 # Global variable to store routing decision (temporary solution)
 _routing_decision = "general"
@@ -70,14 +72,18 @@ _routing_decision = "general"
 def get_last_human_message(state: SupportState) -> str:
     """Extract the last human message content from state, handling both string and list formats"""
     for i, msg in enumerate(reversed(state["messages"])):
-        msg_type = getattr(msg, 'type', 'unknown')
+        msg_type = getattr(msg, "type", "unknown")
         msg_class = msg.__class__.__name__
 
         # Try different ways to identify human messages
-        if (hasattr(msg, 'type') and msg.type == 'human') or msg_class == 'HumanMessage':
+        if (
+            hasattr(msg, "type") and msg.type == "human"
+        ) or msg_class == "HumanMessage":
             content = msg.content
             if isinstance(content, list):
-                result = " ".join(str(item) for item in content if isinstance(item, str))
+                result = " ".join(
+                    str(item) for item in content if isinstance(item, str)
+                )
             else:
                 result = str(content)
             return result
@@ -112,10 +118,12 @@ def unified_intent_classifier(state: SupportState) -> dict:
         _routing_decision = "general"
         return {}
 
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", UNIFIED_INTENT_CLASSIFIER_PROMPT),
-        ("user", "{question}"),
-    ])
+    prompt = ChatPromptTemplate.from_messages(
+        [
+            ("system", UNIFIED_INTENT_CLASSIFIER_PROMPT),
+            ("user", "{question}"),
+        ]
+    )
     llm_input = prompt.format_messages(question=user_msg)
     response = llm.invoke(llm_input)
     answer = response.content.strip().lower()
@@ -134,7 +142,9 @@ def rag_agent(state: SupportState):
     """Deterministic knowledge base retrieval - no tools, direct search"""
     user_msg = get_last_human_message(state)
     if not user_msg:
-        return {"messages": [AIMessage(content="Не могу обработать запрос без сообщения.")]}
+        return {
+            "messages": [AIMessage(content="Не могу обработать запрос без сообщения.")]
+        }
 
     try:
         # Direct knowledge base search (deterministic)
@@ -147,10 +157,12 @@ def rag_agent(state: SupportState):
         context = "\n".join([doc.page_content for doc in retrieved_docs])
 
         # Generate response with context
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", RAG_AGENT_PROMPT),
-            ("user", "Context:\n{context}\n\nUser question: {question}")
-        ])
+        prompt = ChatPromptTemplate.from_messages(
+            [
+                ("system", RAG_AGENT_PROMPT),
+                ("user", "Context:\n{context}\n\nUser question: {question}"),
+            ]
+        )
 
         llm_input = prompt.format_messages(context=context, question=user_msg)
         response = llm.invoke(llm_input)
@@ -158,28 +170,31 @@ def rag_agent(state: SupportState):
         return {"messages": [response]}
 
     except Exception as e:
-        return {"messages": [AIMessage(content="Извините, не могу получить информацию из базы знаний. Попробуйте переформулировать вопрос.")]}
+        return {
+            "messages": [
+                AIMessage(
+                    content="Извините, не могу получить информацию из базы знаний. Попробуйте переформулировать вопрос."
+                )
+            ]
+        }
+
+
+# Create the React agent with database tools
+react_agent_executor = create_react_agent(llm, database_tools)
 
 
 def react_tool_agent(state: SupportState):
-    """Intelligent database tool usage with self-managed parameter extraction"""
-    # Check if we just came back from tools (last message has tool results)
-    if (state["messages"] and
-        hasattr(state["messages"][-1], '__class__') and
-        state["messages"][-1].__class__.__name__ == 'ToolMessage'):
-        # We have tool results, let LLM format a nice response
-        response = llm.invoke(state["messages"])
-        return {"messages": [response]}
-    else:
-        # First time here, bind all database tools and let React agent decide
-        tool_llm = llm.bind_tools(database_tools)
+    """Intelligent database tool usage with LangChain's built-in React agent"""
+    # Add system message for React agent behavior
+    messages_with_system = [SystemMessage(content=REACT_TOOL_AGENT_PROMPT)] + state[
+        "messages"
+    ]
 
-        # Add system message for React agent behavior
-        system_message = SystemMessage(content=REACT_TOOL_AGENT_PROMPT)
-        messages_with_system = [system_message] + state["messages"]
+    # Use the pre-built React agent
+    result = react_agent_executor.invoke({"messages": messages_with_system})
 
-        response = tool_llm.invoke(messages_with_system)
-        return {"messages": [response]}
+    # Return only the new messages added by the agent (excluding the system message we added)
+    return {"messages": result["messages"][len(messages_with_system) :]}
 
 
 def general_response(state: SupportState):
@@ -195,20 +210,27 @@ def general_response(state: SupportState):
     user_msg = user_msg_raw.lower()
 
     # Detect specific types of general requests
-    if any(word in user_msg for word in ["привет", "здравствуй", "добрый", "hello", "hi"]):
+    if any(
+        word in user_msg for word in ["привет", "здравствуй", "добрый", "hello", "hi"]
+    ):
         response = "Привет! Я ассистент поддержки клиентов. Могу помочь с заказами, доставкой, платежами и возвратами. Что вас интересует?"
-    elif any(word in user_msg for word in ["что можешь", "что умеешь", "возможности", "помощь", "help"]):
+    elif any(
+        word in user_msg
+        for word in ["что можешь", "что умеешь", "возможности", "помощь", "help"]
+    ):
         response = "Я помогаю с:\n• Отслеживанием заказов\n• Вариантами доставки\n• Вопросами по оплате\n• Возвратами товаров\n• Общими вопросами поддержки\n\nО чем хотите узнать?"
     elif any(word in user_msg for word in ["спасибо", "благодарю", "thanks"]):
         response = "Пожалуйста! Если возникнут еще вопросы - обращайтесь."
-    elif any(word in user_msg for word in ["интересного", "interesting", "расскажешь", "tell me"]):
+    elif any(
+        word in user_msg
+        for word in ["интересного", "interesting", "расскажешь", "tell me"]
+    ):
         response = "Могу рассказать о наших сервисах поддержки клиентов! Мы помогаем отслеживать заказы, выбирать варианты доставки, решать вопросы с оплатой и оформлять возвраты. Есть конкретные вопросы?"
     else:
         # Fallback to LLM for other general queries
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", GENERAL_RESPONSE_PROMPT),
-            ("user", "{message}")
-        ])
+        prompt = ChatPromptTemplate.from_messages(
+            [("system", GENERAL_RESPONSE_PROMPT), ("user", "{message}")]
+        )
         # Use the same user message we found earlier (without .lower())
         original_msg = user_msg_raw
         llm_input = prompt.format_messages(message=original_msg)
@@ -232,15 +254,12 @@ def routing_condition(state: SupportState):
     global _routing_decision
     return _routing_decision
 
+
 def tools_or_end_condition(state: SupportState):
     """Check if we need tools or should end"""
-    last_message = state["messages"][-1] if state["messages"] else None
-
-    # If last message has tool calls, go to tools
-    if last_message and hasattr(last_message, 'tool_calls') and last_message.tool_calls:
-        return "tools"
-    else:
-        return END
+    # With the built-in React agent, we always go to END after processing
+    # The agent handles tool calls internally
+    return END
 
 
 # --- Build the graph ---
@@ -253,9 +272,6 @@ graph_builder.add_node("react_tool_agent", react_tool_agent)
 graph_builder.add_node("general_response", general_response)
 graph_builder.add_node("cannot_help", cannot_help)
 
-# Add tool execution node
-graph_builder.add_node("tools", ToolNode(all_tools))
-
 # Add edges
 graph_builder.add_edge(START, "unified_intent_classifier")
 
@@ -267,26 +283,19 @@ graph_builder.add_conditional_edges(
         "rag": "rag_agent",
         "tools": "react_tool_agent",
         "general": "general_response",
-        "cannot_help": "cannot_help"
+        "cannot_help": "cannot_help",
     },
 )
 
 # RAG agent goes directly to end (no tools needed)
 graph_builder.add_edge("rag_agent", END)
 
-# React tool agent can use database tools
-graph_builder.add_conditional_edges(
-    "react_tool_agent",
-    tools_or_end_condition,
-    {"tools": "tools", END: END}
-)
+# React tool agent now handles tools internally and goes directly to end
+graph_builder.add_edge("react_tool_agent", END)
 
 # Simple nodes go directly to end
 graph_builder.add_edge("general_response", END)
 graph_builder.add_edge("cannot_help", END)
-
-# After tools execution, always return to React agent
-graph_builder.add_edge("tools", "react_tool_agent")
 
 # Compile the graph - LangGraph Studio provides its own checkpointer automatically
 graph = graph_builder.compile()
