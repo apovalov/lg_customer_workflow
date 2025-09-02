@@ -1,6 +1,8 @@
 from typing import Literal
+from copy import deepcopy
 from langchain_core.messages import AIMessage, SystemMessage
 from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.runnables import chain
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END, START, MessagesState, StateGraph
 from langgraph.prebuilt import ToolNode, create_react_agent
@@ -27,6 +29,11 @@ from agent_src.tools import (
     tool_last_return_status,
     tool_return_eligibility,
     tool_request_return_label,
+    # Customer-specific tools (with injected customer_id)
+    tool_get_my_orders,
+    tool_get_my_order_status,
+    tool_get_my_payments,
+    tool_get_my_returns,
 )
 from config import settings
 
@@ -53,8 +60,16 @@ database_tools = [
     tool_request_return_label,
 ]
 
+# Customer-specific tools (with injected customer_id)
+customer_tools = [
+    tool_get_my_orders,
+    tool_get_my_order_status,
+    tool_get_my_payments,
+    tool_get_my_returns,
+]
+
 rag_tools = [retrieve_support_docs]
-all_tools = database_tools + rag_tools
+all_tools = database_tools + customer_tools + rag_tools
 
 
 # --- State Definition ---
@@ -64,8 +79,11 @@ class SupportState(MessagesState):
     pass
 
 
-# Global variable to store routing decision (temporary solution)
+# Global variables (temporary solutions)
 _routing_decision = "general"
+# Default customer_id - можно изменить для тестирования разных пользователей
+# 501 = Alice Johnson, 502 = Bob Smith, 503 = Carlos Diaz, 504 = Diana Lee, 505 = Eva Nowak
+DEFAULT_CUSTOMER_ID = 501  # Alice Johnson - default customer
 
 
 # --- Helper Functions ---
@@ -88,6 +106,9 @@ def get_last_human_message(state: SupportState) -> str:
                 result = str(content)
             return result
     return ""
+
+
+
 
 
 # --- Intent Classification ---
@@ -179,22 +200,24 @@ def rag_agent(state: SupportState):
         }
 
 
-# Create the React agent with database tools
-react_agent_executor = create_react_agent(llm, database_tools)
+# Create the React agent with all tools
+react_agent_executor = create_react_agent(llm, all_tools)
 
 
 def react_tool_agent(state: SupportState):
-    """Intelligent database tool usage with LangChain's built-in React agent"""
+    """Intelligent tool usage with customer_id injection for relevant tools"""
     # Add system message for React agent behavior
-    messages_with_system = [SystemMessage(content=REACT_TOOL_AGENT_PROMPT)] + state[
-        "messages"
-    ]
+    messages_with_system = [SystemMessage(content=REACT_TOOL_AGENT_PROMPT)] + state["messages"]
 
-    # Use the pre-built React agent
-    result = react_agent_executor.invoke({"messages": messages_with_system})
+    # Use the pre-built React agent, but we'll need to inject customer_id into tool invocations
+    # For now, we use the agent as is - the customer_id injection will be handled via a different mechanism
+    result = react_agent_executor.invoke(
+        {"messages": messages_with_system},
+        config={"configurable": {"customer_id": DEFAULT_CUSTOMER_ID}}
+    )
 
     # Return only the new messages added by the agent (excluding the system message we added)
-    return {"messages": result["messages"][len(messages_with_system) :]}
+    return {"messages": result["messages"][len(messages_with_system):]}
 
 
 def general_response(state: SupportState):

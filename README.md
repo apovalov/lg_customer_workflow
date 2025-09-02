@@ -13,15 +13,23 @@ AI-powered customer support assistant built with LangChain and LangGraph. Combin
 - **💳 Payment Support**: Handle failed payments and retry procedures
 - **↩️ Returns Processing**: Check return eligibility and process return requests
 - **📚 RAG Knowledge Base**: Answer general questions using customer support documentation
+- **👤 Customer Context**: Personalized experience with automatic customer identification
+- **🛠️ Unified Tool Access**: React agent can access both database tools and knowledge base
 
 ## Architecture
 
 The system uses a graph-based workflow with 4 main branches:
 
 1. **RAG Agent** - Handles general policy questions using knowledge base
-2. **React Tool Agent** - Uses database tools for specific customer queries
+2. **React Tool Agent** - Uses comprehensive tools for customer queries (database + RAG + customer-specific)
 3. **General Response** - Handles greetings and casual conversation
 4. **Cannot Help** - Politely declines out-of-scope requests
+
+### Customer Context Features
+
+- **Automatic Customer Identification**: Default customer_id is injected into customer-specific tools
+- **Personalized Queries**: Support for "my orders", "my payments" type questions
+- **Multi-Customer Support**: Easy switching between customer contexts for testing
 
 
 <img width="703" height="306" alt="Screenshot 2025-09-01 at 00 27 54" src="https://github.com/user-attachments/assets/69faa2aa-badd-43fb-a6ee-112866ab6e03" />
@@ -125,7 +133,25 @@ Launches the Streamlit chat interface at http://localhost:8501.
 
 ### 🛠️ Database Tool Queries
 
-**Order Tracking:**
+**Personal Queries (automatically use current customer context):**
+```
+"Какие у меня заказы?"
+"В каком статусе мои заказы?"
+"Какие у меня проблемы с оплатой?"
+"Есть ли у меня возвраты?"
+"Покажи мою историю заказов"
+"Могу ли я вернуть свой заказ?"
+```
+
+**Combined Queries (RAG + Personal Data):**
+```
+"Что такое политика возвратов и могу ли я вернуть свой заказ?"
+"Расскажи про варианты доставки и когда придет мой заказ?"
+"Как повторить оплату и какие у меня проблемы с платежами?"
+"Объясни процедуру возврата для моего заказа 1003"
+```
+
+**Order Tracking (specific order IDs):**
 ```
 "Где сейчас мой заказ 1001?"
 "Статус заказа #1004?"
@@ -160,6 +186,34 @@ Launches the Streamlit chat interface at http://localhost:8501.
 "Спасибо за помощь"
 ```
 
+## Example Interactions
+
+### Personal Query Example
+**Query:** "Какие у меня заказы?"
+**Response:** *Uses tool_get_my_orders automatically*
+```
+У вас есть один заказ:
+- Номер заказа: 1001
+- Статус: Отправлен
+- Дата заказа: 30 июля 2025
+- Сумма: 59.99 USD
+- Номер отслеживания: TRK1001
+- Перевозчик: UPS
+- Ожидаемая дата доставки: 5 августа 2025
+```
+
+### Combined Query Example
+**Query:** "Что такое политика возвратов и могу ли я вернуть свой заказ?"
+**Response:** *Uses both retrieve_support_docs and customer tools*
+```
+Политика возвратов позволяет вернуть товар в течение 30 дней с момента доставки...
+
+Для вашего заказа 1001:
+- Заказ был доставлен более 30 дней назад
+- Возврат возможен с дополнительными условиями
+- Рекомендуем связаться с поддержкой для индивидуального решения
+```
+
 ## Database Schema
 
 The system uses PostgreSQL with the following main tables:
@@ -172,6 +226,20 @@ The system uses PostgreSQL with the following main tables:
 - **shipping_methods**: Available delivery options by region
 - **shipment_events**: Tracking history for shipped orders
 
+## Customer Context Configuration
+
+The system uses a default customer_id for personalized queries. You can change the current customer by modifying the `DEFAULT_CUSTOMER_ID` in `agent_src/graph.py`:
+
+```python
+# Available test customers:
+# 501 = Alice Johnson (New York, US) - has order 1001 (Shipped)
+# 502 = Bob Smith (San Francisco, US) - has order 1002 (PendingPayment)
+# 503 = Carlos Diaz (Madrid, ES) - has order 1003 (Delivered)
+# 504 = Diana Lee (Toronto, CA) - has order 1004 (Shipped)
+# 505 = Eva Nowak (Warsaw, PL) - has order 1005 (Canceled)
+DEFAULT_CUSTOMER_ID = 501  # Change this to test different customers
+```
+
 ## Development Commands
 
 ```bash
@@ -182,6 +250,28 @@ just run-langgraph  # Start LangGraph Studio
 just app           # Start Streamlit interface
 ```
 
+### Testing New Features
+
+To test the new customer-context and RAG integration features:
+
+```bash
+# Test personal queries (automatically uses current customer)
+uv run python -c "
+from agent_src.graph import graph
+from langchain_core.messages import HumanMessage
+result = graph.invoke({'messages': [HumanMessage(content='Какие у меня заказы?')]})
+print(result['messages'][-1].content)
+"
+
+# Test combined RAG + personal data
+uv run python -c "
+from agent_src.graph import graph
+from langchain_core.messages import HumanMessage
+result = graph.invoke({'messages': [HumanMessage(content='Что такое политика возвратов и есть ли у меня возвраты?')]})
+print(result['messages'][-1].content)
+"
+```
+
 ## Workflow Testing in LangGraph Studio
 
 1. **Input → Messages**: Click **+ Message**
@@ -189,16 +279,28 @@ just app           # Start Streamlit interface
 3. **Content**: Enter your test query
 4. **Submit**: Click Submit button
 
-## Possible Improvements
+## Recent Improvements (Completed)
+
+✅ **Enhanced React Tool Agent**: Now has access to both database tools and RAG knowledge base
+✅ **Customer Context Injection**: Automatic customer_id injection for personalized queries
+✅ **New Customer-Specific Tools**:
+  - `tool_get_my_orders` - Get all orders for current customer
+  - `tool_get_my_order_status` - Get specific order status for current customer
+  - `tool_get_my_payments` - Get payment history for current customer
+  - `tool_get_my_returns` - Get return requests for current customer
+✅ **Unified Tool Access**: Single agent can handle both specific data queries and general policy questions
+✅ **Improved Prompts**: Updated to reflect new capabilities and tool selection strategies
+
+## Possible Future Improvements
 
 1. Add real-time streaming in Streamlit interface
-2. Implement guardrail system for quality control and human escalation
+2. Implement user authentication and session management for dynamic customer_id assignment
 3. Add more sophisticated slot filling with validation
 4. Expand knowledge base with more detailed support documentation
-5. Add user authentication and session management
+5. Implement guardrail system for quality control and human escalation
 6. Implement audit logging for support interactions
-
 7. Add multi-language support for international customers
+8. Add conversation memory to maintain context across multiple interactions
 
 
 

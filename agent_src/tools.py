@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 from langchain_core.tools import tool
+from langchain_core.runnables import RunnableConfig
 
 # ChromaDB retrieval tool
 from clients.vector_db import vector_db_client
@@ -475,3 +476,171 @@ def tool_request_return_label(order_id: int, email: str) -> Dict[str, Any]:
     """
     # In real life: insert into return_labels queue and send email
     return {"created": True, "order_id": order_id, "email": email}
+
+
+# ---- CUSTOMER-SPECIFIC tools (with injected customer_id) -------------------
+
+@tool
+def tool_get_my_orders(config: RunnableConfig) -> Dict[str, Any]:
+    """
+    Get all orders for the current customer.
+    Returns: orders list with order_id, status, total_amount, order_date, tracking info
+    """
+    customer_id = config.get("configurable", {}).get("customer_id", 501)  # Default to Alice
+
+    sql = """
+        SELECT o.order_id, o.status, o.order_date, o.total_amount, o.currency,
+               o.tracking_no, o.carrier, o.eta_date
+        FROM orders o
+        WHERE o.customer_id = %s
+        ORDER BY o.order_date DESC;
+    """
+    orders = _fetch_all(sql, (customer_id,))
+
+    # Normalize dates to ISO strings
+    for order in orders:
+        if order.get("order_date"):
+            try:
+                order["order_date"] = (
+                    order["order_date"].astimezone(timezone.utc).isoformat()
+                    if hasattr(order["order_date"], "astimezone")
+                    else str(order["order_date"])
+                )
+            except Exception:
+                order["order_date"] = str(order["order_date"])
+
+        if order.get("eta_date"):
+            try:
+                order["eta_date"] = str(order["eta_date"])
+            except Exception:
+                order["eta_date"] = str(order["eta_date"])
+
+    return {"customer_id": customer_id, "orders": orders, "count": len(orders)}
+
+
+@tool
+def tool_get_my_order_status(order_id: int, config: RunnableConfig) -> Dict[str, Any]:
+    """
+    Get order status for a specific order that belongs to the current customer.
+    Returns: order details with current status and tracking info
+    """
+    customer_id = config.get("configurable", {}).get("customer_id", 501)  # Default to Alice
+
+    sql = """
+        SELECT o.order_id, o.status, o.order_date, o.total_amount, o.currency,
+               o.tracking_no, o.carrier, o.eta_date, o.status_updated_at
+        FROM orders o
+        WHERE o.order_id = %s AND o.customer_id = %s
+        LIMIT 1;
+    """
+    order = _fetch_one(sql, (order_id, customer_id))
+
+    if not order:
+        return {"found": False, "order_id": order_id, "message": "Заказ не найден или не принадлежит вам"}
+
+    # Get latest shipment event if tracking number exists
+    last_event = None
+    if order.get("tracking_no"):
+        evt_sql = """
+            SELECT status, location, event_time, details
+            FROM shipment_events
+            WHERE tracking_no = %s
+            ORDER BY event_time DESC
+            LIMIT 1;
+        """
+        last_event = _fetch_one(evt_sql, (order["tracking_no"],))
+        if last_event and last_event.get("event_time"):
+            try:
+                last_event["event_time"] = (
+                    last_event["event_time"].astimezone(timezone.utc).isoformat()
+                    if hasattr(last_event["event_time"], "astimezone")
+                    else str(last_event["event_time"])
+                )
+            except Exception:
+                last_event["event_time"] = str(last_event["event_time"])
+
+    # Normalize dates
+    for date_field in ["order_date", "status_updated_at"]:
+        if order.get(date_field):
+            try:
+                order[date_field] = (
+                    order[date_field].astimezone(timezone.utc).isoformat()
+                    if hasattr(order[date_field], "astimezone")
+                    else str(order[date_field])
+                )
+            except Exception:
+                order[date_field] = str(order[date_field])
+
+    if order.get("eta_date"):
+        try:
+            order["eta_date"] = str(order["eta_date"])
+        except Exception:
+            order["eta_date"] = str(order["eta_date"])
+
+    return {"found": True, "customer_id": customer_id, **order, "latest_tracking": last_event}
+
+
+@tool
+def tool_get_my_payments(config: RunnableConfig) -> Dict[str, Any]:
+    """
+    Get payment status for all orders of the current customer.
+    Returns: list of payments with status, method, and failure details if any
+    """
+    customer_id = config.get("configurable", {}).get("customer_id", 501)  # Default to Alice
+
+    sql = """
+        SELECT p.order_id, p.method, p.amount, p.currency, p.status,
+               p.last_attempt, p.failure_code, p.failure_reason,
+               o.order_date
+        FROM payments p
+        JOIN orders o ON o.order_id = p.order_id
+        WHERE o.customer_id = %s
+        ORDER BY p.last_attempt DESC;
+    """
+    payments = _fetch_all(sql, (customer_id,))
+
+    # Normalize dates
+    for payment in payments:
+        for date_field in ["last_attempt", "order_date"]:
+            if payment.get(date_field):
+                try:
+                    payment[date_field] = (
+                        payment[date_field].astimezone(timezone.utc).isoformat()
+                        if hasattr(payment[date_field], "astimezone")
+                        else str(payment[date_field])
+                    )
+                except Exception:
+                    payment[date_field] = str(payment[date_field])
+
+    return {"customer_id": customer_id, "payments": payments, "count": len(payments)}
+
+
+@tool
+def tool_get_my_returns(config: RunnableConfig) -> Dict[str, Any]:
+    """
+    Get return requests for all orders of the current customer.
+    Returns: list of returns with status and details
+    """
+    customer_id = config.get("configurable", {}).get("customer_id", 501)  # Default to Alice
+
+    sql = """
+        SELECT r.return_id, r.order_id, r.request_date, r.status,
+               r.approved, r.refund_amount, r.currency, r.notes,
+               p.title as product_title
+        FROM returns r
+        JOIN orders o ON o.order_id = r.order_id
+        LEFT JOIN products p ON p.product_id = r.product_id
+        WHERE o.customer_id = %s
+        ORDER BY r.request_date DESC;
+    """
+    returns = _fetch_all(sql, (customer_id,))
+
+    # Normalize dates
+    for ret in returns:
+        if ret.get("request_date"):
+            try:
+                ret["request_date"] = str(ret["request_date"])
+            except Exception:
+                ret["request_date"] = str(ret["request_date"])
+
+    return {"customer_id": customer_id, "returns": returns, "count": len(returns)}
